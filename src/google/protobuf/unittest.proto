@@ -180,6 +180,7 @@ message TestAllTypes {
     NestedMessage oneof_nested_message = 112;
     string oneof_string = 113;
     bytes oneof_bytes = 114;
+    NestedMessage oneof_nested_lazy_message = 115 [lazy=true];
   }
 }
 
