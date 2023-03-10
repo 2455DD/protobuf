@@ -28,21 +28,21 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#[test]
-fn test_canonical_types() {
-    let _child = child_proto::Child::new();
-    let _parent = parent_proto::Parent::new();
-    // Parent from child_proto crate should be the same type as Parent from
-    // parent_proto crate.
-    let _parent_from_child: child_proto::Parent = parent_proto::Parent::new();
+// Rust bindings for C++ runtime
+
+#[repr(C)]
+pub struct Arena {
+    _data: [u8; 0],
 }
 
-#[test]
-fn test_parent_serialization() {
-    assert_eq!(*parent_proto::Parent::new().serialize(), []);
-}
+impl cc_Arena {
+    pub unsafe fn new() -> *mut Self {
+        let arena = Arena {};
+        std::mem::forget(arena);
+        &mut arena as *mut _
+    }
 
-#[test]
-fn test_child_serialization() {
-    assert_eq!(*child_proto::Child::new().serialize(), []);
+    pub unsafe fn free(arena: *mut Self) {
+        std::mem::drop(arena);
+    }
 }

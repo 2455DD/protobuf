@@ -30,6 +30,7 @@
 
 #include "google/protobuf/compiler/rust/generator.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,6 +58,31 @@ bool ExperimentalRustGeneratorEnabled(
       });
 }
 
+// Marks which backend Rust gencode should depend on.
+enum class Backend {
+  kUpb,
+  kCc,
+};
+
+std::optional<Backend> ParseBackendConfiguration(
+    const std::vector<std::pair<std::string, std::string>>& options) {
+  static constexpr absl::string_view kBackend = "backend";
+  static constexpr absl::string_view kUpb = "upb";
+  static constexpr absl::string_view kCc = "cc";
+
+  for (const auto& pair : options) {
+    if (pair.first == kBackend) {
+      if (pair.second == kUpb) {
+        return std::make_optional(Backend::kUpb);
+      }
+      if (pair.second == kCc) {
+        return std::make_optional(Backend::kCc);
+      }
+    }
+  }
+  return std::nullopt;
+}
+
 std::string get_crate_name(const FileDescriptor* dependency) {
   absl::string_view path = dependency->name();
   auto basename = path.substr(path.rfind('/') + 1);
@@ -81,23 +107,25 @@ bool RustGenerator::Generate(const FileDescriptor* file,
     return false;
   }
 
+  std::optional<Backend> maybe_backend = ParseBackendConfiguration(options);
+  if (!maybe_backend.has_value()) {
+    *error =
+        "Mandatory option `backend` missing, please specify `cc` or "
+        "`upb`.";
+    return false;
+  }
+  Backend backend = *maybe_backend;
+
   auto basename = StripProto(file->name());
   auto outfile = absl::WrapUnique(
       generator_context->Open(absl::StrCat(basename, ".pb.rs")));
 
   google::protobuf::io::Printer p(outfile.get());
-  // TODO(b/270138878): Remove `do_nothing` import once we have real logic. This
-  // is there only to smoke test rustc actions in rust_proto_library.
   p.Emit(R"rs(
-#[allow(unused_imports)]
-    use protobuf::do_nothing;
+    use protobuf::*;
+    use std::ptr::NonNull;
   )rs");
-  for (int i = 0; i < file->message_type_count(); ++i) {
-    // TODO(b/270138878): Implement real logic
-    p.Emit({{"Msg", file->message_type(i)->name()}}, R"rs(
-                    pub struct $Msg$ {}
-                  )rs");
-  }
+
   // TODO(b/270124215): Delete the following "placeholder impl" of `import
   // public`. Also make sure to figure out how to map FileDescriptor#name to
   // Rust crate names (currently Bazel labels).
@@ -111,6 +139,58 @@ bool RustGenerator::Generate(const FileDescriptor* file,
           R"rs(
                 pub use $crate$::$type_name$;
               )rs");
+    }
+  }
+
+  for (int i = 0; i < file->message_type_count(); ++i) {
+    // TODO(b/270138878): Implement real logic
+    std::string full_name = file->message_type(i)->full_name();
+    absl::StrReplaceAll({{".", "_"}}, &full_name);
+    switch (backend) {
+      case Backend::kUpb: {
+        p.Emit(
+            {{"Msg", file->message_type(i)->name()}, {"FullName", full_name}},
+            R"rs(
+          pub struct $Msg$ {
+            msg: NonNull<u8>,
+            arena: *mut Arena,
+          }
+
+          impl $Msg$ {
+            pub fn new() -> Self {
+              let arena = unsafe { Arena::new() };
+              let msg = unsafe { $FullName$_new(arena) };
+              $Msg$ { msg, arena }
+            }
+            pub fn serialize(&self) -> Vec<u8> {
+              let mut len = 0;
+              let chars = unsafe { $FullName$_serialize(self.msg, self.arena, &mut len) };
+              unsafe {Vec::from_raw_parts(chars.as_ptr(), len, len)}
+            }
+          }
+
+          extern "C" {
+            fn $FullName$_new(arena: *mut Arena) -> NonNull<u8>;
+            fn $FullName$_serialize(msg: NonNull<u8>, arena: *mut Arena, len: &mut usize) -> NonNull<u8>;
+          }
+    )rs");
+        break;
+      }
+      case Backend::kCc: {
+        p.Emit(
+            {{"Msg", file->message_type(i)->name()}, {"FullName", full_name}},
+            R"rs(
+          pub struct $Msg$ {
+            msg: NonNull<u8>,
+          }
+
+          impl $Msg$ {
+            pub fn new() -> Self { Self { msg: NonNull::dangling() }}
+            pub fn serialize(&self) -> Vec<u8> { vec![] }
+          }
+        )rs");
+        break;
+      }
     }
   }
 

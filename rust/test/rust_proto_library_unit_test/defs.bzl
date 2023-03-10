@@ -1,9 +1,14 @@
 """Support for rust_proto_library_aspect unit-tests."""
 
-load("//rust:defs.bzl", "RustProtoInfo", "rust_proto_library_aspect")
+load(
+    "//rust:aspects.bzl",
+    "RustProtoInfo",
+    "rust_cc_proto_library_aspect",
+    "rust_upb_proto_library_aspect",
+)
 
 ActionsInfo = provider(
-    doc = ("A provider that exposes what actions were registered by rust_proto_library_aspect " +
+    doc = ("A provider that exposes what actions were registered by rust_proto_library aspects " +
            "on proto_libraries."),
     fields = {"actions": "List[Action]: actions registered on proto_libraries."},
 )
@@ -11,9 +16,16 @@ ActionsInfo = provider(
 def _attach_aspect_impl(ctx):
     return [ctx.attr.dep[RustProtoInfo], ActionsInfo(actions = ctx.attr.dep.actions)]
 
-attach_aspect = rule(
+attach_upb_aspect = rule(
     implementation = _attach_aspect_impl,
     attrs = {
-        "dep": attr.label(aspects = [rust_proto_library_aspect]),
+        "dep": attr.label(aspects = [rust_upb_proto_library_aspect]),
+    },
+)
+
+attach_cc_aspect = rule(
+    implementation = _attach_aspect_impl,
+    attrs = {
+        "dep": attr.label(aspects = [rust_cc_proto_library_aspect]),
     },
 )
