@@ -5480,7 +5480,6 @@ void DescriptorBuilder::BuildMessage(const DescriptorProto& proto,
     }
   }
 
-
   // Check that fields aren't using reserved names or numbers and that they
   // aren't using extension numbers.
   for (int i = 0; i < result->field_count(); i++) {
@@ -5509,6 +5508,7 @@ void DescriptorBuilder::BuildMessage(const DescriptorProto& proto,
                                   field->name(), field->number()));
       }
     }
+
     if (reserved_name_set.find(field->name()) != reserved_name_set.end()) {
       AddError(
           field->full_name(), proto.field(i),
